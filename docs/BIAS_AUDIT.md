@@ -7,10 +7,11 @@ One row per bias, what defends against it, and — where nothing does — that.
 | Look-ahead: reading a bar you couldn't have had | `PointInTimeView` slices at the cursor; there is no method that returns future rows. `view.at()` raises `LookAheadError`. | **Structural** |
 | Look-ahead: executing at the signal's own price | The event loop fills at `t+1`'s open. The strategy has no say. | **Structural** |
 | Look-ahead: restated / point-in-time-incorrect inputs | Nothing. Prices here are synthetic and never restated. Real data needs vendor PIT snapshots. | **NOT DEFENDED** |
-| Survivorship | Nothing. Single synthetic series, no universe, no delistings. | **NOT DEFENDED** |
+| Survivorship | Universe with delistings booked at their delisting return; same strategy run on the as-it-was universe vs survivors only. | **Measured: +0.64 Sharpe inflation on reversal** |
 | Overfitting | Walk-forward: parameters chosen only on the training window, applied untouched to the next. IS and OOS both reported. | **Built** |
 | Multiple testing | Every variant counted (147 in the current run), compared against E[max Sharpe] under the null. | **Built** |
 | Costs | Commission + half-spread + slippage on every fill, **inside the return series**. Sensitivity at 0/5/10/20bps. | **Built** |
+| Capacity | Participation-based square-root impact; edge crosses zero between $1m and $10m AUM. | **Built** |
 
 ## The three doors look-ahead comes through
 

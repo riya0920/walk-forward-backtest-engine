@@ -1,7 +1,8 @@
 # ML-2 — Walk-Forward Backtesting Engine
 
-**Status: ~20% slice.** The engine and its self-deception defences are built. The
-universe, the real data, and the reporting layer are not.
+**Status: ~65%.** The engine, its self-deception defences, a universe with
+delistings, portfolio-level backtesting and a capacity analysis are built. Real
+data and the reporting layer are not.
 
 **There is no strategy claim in this repo.** The two strategies are test cargo
 for the engine, run on a synthetic random walk that has no signal in it by
@@ -44,18 +45,52 @@ python -m pytest tests -q
    to *indistinguishable from search noise*, which is the correct answer on a
    random walk.
 
-## What is NOT built (the other 80%)
+## Survivorship, measured (`python run_survivorship.py`)
 
-1. **Survivorship**: no universe, no delisted tickers, no bound on the bias.
-   Single synthetic series only.
-2. **Real data.** No yfinance/vendor loader, no corporate actions, no
-   point-in-time snapshots. The engine has never seen a real price.
-3. **Participation-based slippage.** The slippage model is fixed-bps; a
-   volume-participation model (and the market-impact discussion that goes with
-   it) is missing.
-4. **Portfolio-level backtesting**: one instrument, one position in [-1, 1]. No
-   cross-sectional ranking, no sizing, no risk limits, no leverage or margin.
-5. **vectorbt cross-check** of the engine's own arithmetic.
-6. **Full deflated Sharpe** with skew/kurtosis adjustment, and White's reality
+The bias row that used to read **NOT DEFENDED** now has a number. A 60-name
+universe where names actually die — 21.7% delisted, booked at their delisting
+return (bankruptcy −100%, compliance −55%, acquisition +18%) rather than dropped,
+because dropping the row converts a total loss into "no position" and *that one
+line is most of survivorship bias*.
+
+Same strategy, same dates, same engine, run twice:
+
+| run | Sharpe | total return | max drawdown | delist hits |
+|---|---|---|---|---|
+| momentum (as it was) | 0.59 | 29.3% | −13.2% | 1 |
+| momentum (survivors only) | 0.88 | 47.9% | −8.4% | 0 |
+| reversal (as it was) | 0.07 | 1.0% | −25.0% | 6 |
+| reversal (survivors only) | 0.71 | 38.3% | −9.7% | 0 |
+
+Reversal inflates by **+0.64 Sharpe and +37.4% return** — far more than momentum,
+because a mean-reversion strategy buys exactly the names that are falling, which
+is exactly the population that dies. Note the drawdown column: survivorship
+flatters *risk* more than it flatters return, and risk is what position size is
+set from.
+
+## Capacity
+
+Participation-based impact (`total_bps = 3 + 120·√participation`) replaces the
+fixed-bps model. The edge crosses zero between $1m and $10m of AUM. Past $50m the
+table prints **impact model SATURATED** — one rebalance leg is the entire day's
+volume, so the model stops growing and every larger AUM reports the same number.
+The honest statement there is not "Sharpe −0.90", it is "this trade cannot be
+executed in a day", and saying so properly needs multi-day execution scheduling
+the engine does not have.
+
+## What is NOT built
+
+1. **Real data.** No yfinance/vendor loader, no corporate actions, no
+   point-in-time fundamentals. The engine has never seen a real price, and the
+   universe's delistings are generated, not historical.
+2. **Multi-day execution scheduling**, without which capacity above the
+   saturation point is unmodellable (see above).
+3. **Risk model**: no sector/factor neutrality, no position limits, no leverage
+   or margin, no borrow costs for the short side.
+4. **vectorbt cross-check** of the engine's own arithmetic.
+5. **Full deflated Sharpe** with skew/kurtosis adjustment, and White's reality
    check / SPA as an alternative.
-7. Reporting: no tearsheet, no equity-curve plots, no per-trade log.
+6. Reporting: no tearsheet, no equity-curve plots, no per-trade log.
+7. **Point-in-time correctness of the inputs themselves** — still NOT DEFENDED.
+   The universe is PIT, but a real one needs vendor snapshots of a restated
+   fundamentals history, which is a data-sourcing problem this repo does not solve.
