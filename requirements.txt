@@ -1,0 +1,6 @@
+numpy>=2
+pandas>=2
+scipy>=1.11
+pyarrow>=15
+pytest>=8
+yfinance>=0.2  # run_real.py only

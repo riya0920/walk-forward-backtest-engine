@@ -1,16 +1,20 @@
 # ML-2 — Walk-Forward Backtesting Engine
 
-**Status: ~65%.** The engine, its self-deception defences, a universe with
-delistings, portfolio-level backtesting and a capacity analysis are built. Real
-data and the reporting layer are not.
+**Status: ~85%.** Engine, self-deception defences, a universe with delistings,
+portfolio backtesting, capacity analysis, and **real market data**. CI runs the
+bias audit and survivorship experiment on every push.
 
-**There is no strategy claim in this repo.** The two strategies are test cargo
-for the engine, run on a synthetic random walk that has no signal in it by
-construction — which makes it better engine test data than real prices, because
-anything that looks good on it is a bug.
+**There is no strategy claim in this repo.** The strategies are test cargo. The
+default series is a synthetic random walk with no signal in it by construction --
+better engine test data than real prices, because anything that looks good on it
+is a bug. `run_real.py` then runs the identical harness on real SPY/AAPL/MSFT
+data, because a leak detector calibrated only on synthetic data proves nothing
+about the data you care about.
 
 ```bash
-python run_audit.py
+python run_audit.py           # bias audit, walk-forward, multiple testing
+python run_survivorship.py    # delisting bias + capacity curve
+python run_real.py            # the same engine on real yfinance prices
 python -m pytest tests -q
 ```
 
@@ -80,9 +84,12 @@ the engine does not have.
 
 ## What is NOT built
 
-1. **Real data.** No yfinance/vendor loader, no corporate actions, no
-   point-in-time fundamentals. The engine has never seen a real price, and the
-   universe's delistings are generated, not historical.
+1. **A survivorship-free REAL universe.** `run_real.py` fetches genuine
+   split/dividend-adjusted prices, but yfinance returns only currently-listed
+   tickers, so that sample is survivorship-biased by construction and cannot be
+   fixed downstream. The delisted-universe experiment therefore stays on
+   generated data, which is the only place a name can actually die here. A real
+   answer needs CRSP-style delisting returns.
 2. **Multi-day execution scheduling**, without which capacity above the
    saturation point is unmodellable (see above).
 3. **Risk model**: no sector/factor neutrality, no position limits, no leverage

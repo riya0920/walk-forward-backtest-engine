@@ -114,14 +114,34 @@ def run(frame: pd.DataFrame, strategy, costs: CostModel | None = None,
         if traded > 0:
             turnover_total += traded
             costs_total += cost
-        position = target
 
-        # --- hold through bar i+1: open -> close ---------------------------
-        bar_ret = (closes[i + 1] / fill_price) - 1.0
-        # Net return, costs included. Booking costs against equity but reporting
-        # a gross return series would leave every risk-adjusted metric measuring
-        # a portfolio nobody holds -- Sharpe would not move as costs rise.
-        net = (1 + position * bar_ret) * (1 - cost) - 1
+        # --- P&L for bar i+1, split at the open ----------------------------
+        # The OLD position is held across the overnight gap (prior close ->
+        # this open); the NEW position is held from the fill to this close.
+        #
+        # An earlier version computed only open->close for the whole bar, which
+        # silently discarded every overnight gap. On a mean-zero synthetic walk
+        # that is nearly invisible; on real equities it is most of the return --
+        # buy-and-hold SPY 2015-2024 came out at 47% instead of ~190%. Any
+        # strategy holding overnight was being measured on a portfolio that
+        # liquidates at every close and re-buys at every open.
+        prev_close = closes[i]
+        overnight = (fill_price / prev_close) - 1.0
+        intraday = (closes[i + 1] / fill_price) - 1.0
+
+        # The three sub-periods COMPOUND, they do not add. Writing this as
+        # `position*overnight + target*intraday` drops the cross term, which is
+        # invisible on one bar and compounds into several percent over a few
+        # thousand of them -- it inflated buy-and-hold on the synthetic series by
+        # 3.4% against the price return it must reproduce exactly.
+        #
+        # Order matters and is the real sequence of events: the OLD position
+        # carries the overnight gap, costs are paid when the trade prints at the
+        # open, and the NEW position carries the rest of the day.
+        net = ((1 + position * overnight)
+               * (1 - cost)
+               * (1 + target * intraday)) - 1
+        position = target
         equity *= (1 + net)
 
         eq_curve.append(equity); ret_curve.append(net); pos_curve.append(position)

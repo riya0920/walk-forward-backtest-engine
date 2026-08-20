@@ -80,3 +80,35 @@ def test_costs_reduce_returns_monotonically(prices):
     sharpes = [run(prices, momentum(), CostModel(0, 0, bps)).sharpe()
                for bps in (0, 5, 10, 20)]
     assert sharpes == sorted(sharpes, reverse=True)
+
+
+def test_buy_and_hold_reproduces_the_price_return(prices):
+    """Regression: the engine once computed only open->close each bar, silently
+    discarding every overnight gap. On a mean-zero synthetic walk that is nearly
+    invisible; on real equities it turned a 190% buy-and-hold into 47%.
+
+    A continuously-held position must reproduce the underlying's price return
+    over the same window, to within the warmup and the final bar.
+    """
+    from engine.backtest import buy_and_hold
+    res = buy_and_hold(prices, warmup=60)
+    # The position is established at the OPEN of bar warmup+1, so the reference
+    # is open[61] -> close[-1]. Using close[60] would include an overnight gap
+    # the position did not hold, which is the same class of error in the
+    # opposite direction.
+    price_return = prices["close"].iloc[-1] / prices["open"].iloc[61] - 1
+    assert res.total_return() == pytest.approx(price_return, rel=1e-6), (
+        "buy-and-hold {:.4%} does not track the price return {:.4%} -- the "
+        "engine is dropping part of the holding period".format(
+            res.total_return(), price_return))
+
+
+def test_overnight_gap_is_attributed_to_the_position_that_held_it(prices):
+    """A position opened at today's open must NOT earn last night's gap."""
+    from engine.backtest import CostModel, run
+
+    def flat(view):
+        return 0.0
+
+    res = run(prices, flat, CostModel(0, 0, 0))
+    assert abs(res.total_return()) < 1e-9, "a flat strategy earned a return"
