@@ -1,8 +1,9 @@
 # ML-2 — Walk-Forward Backtesting Engine
 
-**Status: ~85%.** Engine, self-deception defences, a universe with delistings,
-portfolio backtesting, capacity analysis, and **real market data**. CI runs the
-bias audit and survivorship experiment on every push.
+**Status: ~90%.** Engine, self-deception defences, a universe with delistings,
+portfolio backtesting, capacity analysis, **real market data**, and the **full
+deflated Sharpe** with skew and kurtosis. CI runs the bias audit and
+survivorship experiment on every push.
 
 **There is no strategy claim in this repo.** The strategies are test cargo. The
 default series is a synthetic random walk with no signal in it by construction --
@@ -95,8 +96,9 @@ the engine does not have.
 3. **Risk model**: no sector/factor neutrality, no position limits, no leverage
    or margin, no borrow costs for the short side.
 4. **vectorbt cross-check** of the engine's own arithmetic.
-5. **Full deflated Sharpe** with skew/kurtosis adjustment, and White's reality
-   check / SPA as an alternative.
+5. **White's reality check / SPA** as an alternative to the deflated Sharpe.
+   The full DSR (skew and kurtosis included) is now implemented; the
+   bootstrap-based alternatives are not.
 6. Reporting: no tearsheet, no equity-curve plots, no per-trade log.
 7. **Point-in-time correctness of the inputs themselves** — still NOT DEFENDED.
    The universe is PIT, but a real one needs vendor snapshots of a restated

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from engine.backtest import CostModel, buy_and_hold, run
-from engine.multiple_testing import assess
+from engine.multiple_testing import assess, deflated_sharpe_ratio
 from engine.strategies import (make_synthetic_prices, mean_reversion, momentum,
                                planted_leak)
 
@@ -143,6 +143,30 @@ def main() -> None:
     print("excess over the null-search benchmark         : {:+.3f}".format(
         a["excess_over_null_max"]))
     print("verdict                                       : {}".format(a["verdict"]))
+
+    # ---- full deflated Sharpe on the best window's return series ----------
+    best_row = wf.loc[wf.oos_sharpe.idxmax()]
+    fam = momentum if best_row.strategy == "momentum" else mean_reversion
+    idx = [i for i, d in enumerate(prices.index)
+           if d.date() == best_row.window_start][0]
+    te = prices.iloc[idx + 400:idx + 400 + TEST_BARS]
+    best_res = run(te, fam(int(best_row.chosen_param)))
+    d = deflated_sharpe_ratio(best_res.returns.dropna().to_numpy(), VARIANTS)
+
+    print("\n" + "-" * 78)
+    print("DEFLATED SHARPE (full form: skew and kurtosis included)")
+    print("-" * 78)
+    print("annualised Sharpe        : {:>9.3f}".format(d["sr_annualised"]))
+    print("skew / excess kurtosis   : {:>9.3f} / {:.3f}".format(
+        d["skew"], d["kurtosis"] - 3.0))
+    print("SE, non-normal           : {:>9.5f}  ({:.5f} assuming normality)".format(
+        d["standard_error"], d["normal_se"]))
+    print("DSR                      : {:>9.4f}".format(d["dsr"]))
+    print("verdict                  : {}".format(d["verdict"]))
+    print("\nSkew enters the variance as -skew*SR, so its DIRECTION depends on the")
+    print("sign of the Sharpe; kurtosis enters squared and always widens. The")
+    print("simple form above uses trial count alone, which on a fat-tailed series")
+    print("is the optimistic version of the same question.")
     print("\nThis is the honest answer to 'what is the probability the best one is")
     print("noise?': on data with no signal, the search itself manufactures a")
     print("Sharpe of about {:.2f}. Anything below that is the search, not a strategy."
