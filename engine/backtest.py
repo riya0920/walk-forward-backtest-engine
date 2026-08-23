@@ -43,6 +43,8 @@ class Result:
     turnover: float
     costs_paid: float
     n_bars: int
+    initial_equity: float = 1.0
+    trades: list = field(default_factory=list)
     meta: dict = field(default_factory=dict)
 
     # -- metrics -----------------------------------------------------------
@@ -55,16 +57,42 @@ class Result:
             return 0.0
         return float(r.mean() / r.std() * np.sqrt(TRADING_DAYS))
 
-    def sortino(self) -> float:
-        r = self.returns.dropna()
-        downside = r[r < 0]
-        if len(downside) < 2 or downside.std() == 0:
+    def sortino(self, mar: float = 0.0) -> float:
+        """Annualised Sortino against a minimum acceptable return `mar`.
+
+        The denominator is the second lower partial moment computed over ALL
+        periods, with upside set to zero:
+
+            DD = sqrt( mean_t( min(r_t - mar, 0)^2 ) )
+
+        An earlier version used `r[r < 0].std()` -- the dispersion of the losing
+        returns about THEIR OWN mean, over the losing subset only. That is a
+        different statistic and it is not Sortino. The vectorbt cross-check in
+        `run_vectorbt_check.py` is what caught it: identical return series,
+        0.554 from this engine against 0.641 from vectorbt, a 13.4% gap with no
+        modelling difference behind it.
+
+        Its failure mode is worse than the 13% suggests. If every loss is the
+        same size the subset standard deviation is ZERO and the ratio is
+        infinite -- a strategy with perfectly uniform losses scored as flawless.
+        The lower partial moment cannot do that, because a loss enters by its
+        magnitude rather than by how much it differs from other losses.
+        """
+        r = self.returns.dropna().to_numpy()
+        if len(r) < 2:
             return float("nan")
-        return float(r.mean() / downside.std() * np.sqrt(TRADING_DAYS))
+        downside = np.sqrt(np.mean(np.minimum(r - mar, 0.0) ** 2))
+        if downside == 0:
+            return float("nan")
+        return float((r.mean() - mar) / downside * np.sqrt(TRADING_DAYS))
 
     def max_drawdown(self) -> tuple[float, int]:
         eq = self.equity
-        peak = eq.cummax()
+        # The running peak has to start at the STARTING capital, not at the
+        # first recorded bar. `equity` holds end-of-bar values, so if the very
+        # first bar loses money that loss is the peak on the old reading and the
+        # drawdown from par is invisible.
+        peak = eq.cummax().clip(lower=self.initial_equity)
         dd = eq / peak - 1.0
         trough = dd.idxmin()
         peak_before = eq.loc[:trough].idxmax()
@@ -72,7 +100,19 @@ class Result:
         return float(dd.min()), duration
 
     def total_return(self) -> float:
-        return float(self.equity.iloc[-1] / self.equity.iloc[0] - 1)
+        """Against the STARTING capital, not against the first recorded bar.
+
+        This read `equity.iloc[0]` until the vectorbt cross-check disagreed on
+        the buy-and-hold identity. `equity` is an end-of-bar series, so
+        `iloc[0]` is already 1 + the first bar's return and dividing by it
+        silently discards that bar. With the default 60-bar warmup the first
+        recorded value IS the starting capital and the bug is invisible; at
+        `warmup=0` it removed a -2.46% first bar and turned a 134.07% hold into
+        139.97%. A bug that only appears at a non-default argument is still a
+        bug, and it is exactly the kind an independent implementation finds and
+        a self-written test does not.
+        """
+        return float(self.equity.iloc[-1] / self.initial_equity - 1)
 
     def summary(self) -> dict:
         dd, dur = self.max_drawdown()
@@ -95,6 +135,7 @@ def run(frame: pd.DataFrame, strategy, costs: CostModel | None = None,
     position = 0.0
     equity = 1.0
     eq_curve, ret_curve, pos_curve = [], [], []
+    trades: list[dict] = []
     turnover_total = 0.0
     costs_total = 0.0
 
@@ -114,6 +155,16 @@ def run(frame: pd.DataFrame, strategy, costs: CostModel | None = None,
         if traded > 0:
             turnover_total += traded
             costs_total += cost
+            # One row per FILL, with the price it printed at and the equity it
+            # printed against. A blotter is not a nicety: without it, "turnover
+            # 41.2" is a number nobody can tie back to a decision, and a cost
+            # dispute has nothing to argue from.
+            trades.append({
+                "bar": idx[i + 1], "decided_at": idx[i],
+                "side": "buy" if target > position else "sell",
+                "from_position": position, "to_position": target,
+                "traded": traded, "fill_price": float(fill_price),
+                "cost": cost, "equity_before": equity})
 
         # --- P&L for bar i+1, split at the open ----------------------------
         # The OLD position is held across the overnight gap (prior close ->
@@ -149,7 +200,8 @@ def run(frame: pd.DataFrame, strategy, costs: CostModel | None = None,
     return Result(equity=pd.Series(eq_curve, index=idx),
                   returns=pd.Series(ret_curve, index=idx),
                   positions=pd.Series(pos_curve, index=idx),
-                  turnover=turnover_total, costs_paid=costs_total, n_bars=len(idx))
+                  turnover=turnover_total, costs_paid=costs_total, n_bars=len(idx),
+                  initial_equity=1.0, trades=trades)
 
 
 def buy_and_hold(frame: pd.DataFrame, warmup: int = 60) -> Result:
