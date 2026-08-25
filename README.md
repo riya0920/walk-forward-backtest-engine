@@ -219,15 +219,28 @@ a P&L conversation is a round trip and counting fills doubles it.
    generated data, which is the only place a name can actually die here. A real
    answer needs CRSP-style delisting returns — **a paid dataset, and the one
    remaining gap in this project that no amount of code closes.**
-2. **Intraday execution.** `engine/execution.py` schedules in days against ADV.
-   There is no venue routing, no limit-order model, no adverse-selection term,
-   and no intraday participation profile. It answers "does this position fit,
-   and roughly what does the delay cost" — which is what capacity analysis
-   needs, and nothing finer.
-3. **A risk model estimated from data.** The limits, the sector map and the
-   borrow rates are all declared inputs. There is no covariance matrix, no
-   factor model, and therefore no ex-ante tracking error or factor attribution —
-   `engine/risk.py` constrains exposures, it does not forecast risk.
+2. ~~**Intraday execution.**~~ **DONE** — `engine/intraday.py` schedules within
+   the day on a volume curve MEASURED from 37,384 real 5-minute bars rather than
+   an assumed U-shape (assuming the curve makes the conclusion a property of the
+   assumption). 12.6x between the busiest and quietest bucket; a nominal 5% TWAP
+   participates at 9.2% in the midday trough and costs 10.0% more impact than
+   VWAP, identically at every order size — which is a check, not a coincidence,
+   since the ratio cancels order size under a square-root law.
+
+   It also refuted its own first claim: VWAP came out *less* deferred than TWAP,
+   because a U is not a ramp and the open auction offsets the close.
+
+   Still no venue routing, no limit-order model, no adverse-selection term, and
+   no spread. See `docs/INTRADAY.md`.
+3. ~~**A risk model estimated from data.**~~ **DONE** — `engine/risk_model.py`
+   estimates a Ledoit-Wolf shrunk covariance from returns and reports ex-ante
+   volatility, parametric VaR (labelled parametric, because it understates a fat
+   tail), risk contributions that sum to one, and a diversification ratio.
+   `run_risk_model.py` puts two books side by side that the *mandate* reports as
+   identical — same gross, same net, four names each — and book B carries 21%
+   more volatility. Still no factor model: decomposing risk into market, size,
+   value and momentum needs factor returns this repo does not have.
+   See `docs/RISK_MODEL.md`.
 4. **Point-in-time correctness of the inputs themselves** — still NOT DEFENDED.
    The universe is PIT, but a real one needs vendor snapshots of a restated
    fundamentals history, which is a data-sourcing problem this repo does not solve.
