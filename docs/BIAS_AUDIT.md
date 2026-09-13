@@ -1,6 +1,6 @@
 # Bias audit
 
-One row per bias, what defends against it, and — where nothing does — that.
+One row per bias, what defends against it, and, where nothing does, that.
 
 | Bias | Defence in this repo | Status |
 |---|---|---|
@@ -15,12 +15,12 @@ One row per bias, what defends against it, and — where nothing does — that.
 
 ## The three doors look-ahead comes through
 
-1. **Reading a bar you could not have had yet** — today's close used at today's
+1. **Reading a bar you could not have had yet**: today's close used at today's
    open. Closed structurally: the view object physically cannot return it.
-2. **Executing at the price that generated the signal** — signal from today's
+2. **Executing at the price that generated the signal**: signal from today's
    close, filled at today's close. Closed in the loop: fills are at `t+1` open.
    `test_fills_happen_at_the_next_open_not_at_the_signal_bar` pins it.
-3. **Point-in-time incorrectness of the inputs themselves** — a universe or a
+3. **Point-in-time incorrectness of the inputs themselves**: a universe or a
    fundamentals table assembled today and applied to 2015. This is a data
    sourcing problem, not an engine problem, and **this repo does not solve it.**
 
@@ -30,7 +30,7 @@ A strategy that peeks one bar ahead is run through the same engine. On the
 synthetic random walk it produces an annualised Sharpe far above anything the
 honest strategies reach, and the harness asserts that gap. The threshold (3.0) is
 calibrated in both directions: the leak must trip it, and momentum and
-mean-reversion must *not* — a detector that flags everything is useless.
+mean-reversion must *not*; a detector that flags everything is useless.
 
 ## In-sample vs out-of-sample decay (current run)
 
@@ -54,7 +54,7 @@ verdict                                       : indistinguishable from search no
 ```
 
 Method: expected maximum Sharpe under the null of zero skill (Bailey & López de
-Prado's deflated-Sharpe construction, simple form — skew/kurtosis adjustment not
+Prado's deflated-Sharpe construction, simple form, skew/kurtosis adjustment not
 applied, and that omission makes this *optimistic*, not conservative).
 
 The `n_days` input is the length of the window the Sharpe was measured on (100
