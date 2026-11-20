@@ -1,6 +1,6 @@
 # ML-2: Walk-Forward Backtesting Engine
 
-**Status: ~97%.** Engine, self-deception defences, a universe with delistings,
+Engine, self-deception defences, a universe with delistings,
 portfolio backtesting, capacity analysis, **real market data**, the **full
 deflated Sharpe**, **White's Reality Check and Hansen's SPA** on a stationary
 bootstrap, a **risk model** (name/sector/gross/net limits, sector neutrality,
@@ -249,3 +249,18 @@ a P&L conversation is a round trip and counting fills doubles it.
    a pull request. The monthly return table carries the same information and
    survives CI output. This is a choice, not a gap, and it is listed here so it
    is not mistaken for one.
+
+## Spec coverage
+
+What the original brief asked for, and whether it is in this project:
+
+| Asked for | In this project? |
+|---|---|
+| Build the backtesting engine yourself, with strict timing so it can never peek at the future | Yes - the data access refuses future rows by design, not by discipline |
+| Prove the no-peeking guard works by planting a cheating signal and showing it gets caught | Yes |
+| Handle survivorship bias by using a stock universe that includes delisted companies | Yes |
+| Avoid overfitting with rolling train/test windows, and report the honest drop from in-sample to out-of-sample | Yes |
+| Count every strategy you tried and correct for it (deflated Sharpe / reality check) | Yes |
+| Model real trading costs - commission, spread, slippage - and show results with and without them | Yes |
+| Report the standard metrics (Sharpe, Sortino, drawdown, turnover) against buy-and-hold | Yes |
+| Run on real market prices, not only test data | Yes (`run_real.py` on real SPY/AAPL/MSFT; the synthetic series is deliberate test cargo) |
