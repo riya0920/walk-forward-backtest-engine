@@ -6,7 +6,7 @@ deflated Sharpe**, **White's Reality Check and Hansen's SPA** on a stationary
 bootstrap, a **risk model** (name/sector/gross/net limits, sector neutrality,
 per-name borrow costs), **multi-day execution scheduling**, a **per-fill
 blotter and tearsheet**, and an **independent cross-check against vectorbt**
-that found two defects in this engine. **56 tests.**
+that found three defects in this engine. **90 tests.**
 
 **There is no strategy claim in this repo.** The strategies are test cargo. The
 default series is a synthetic random walk with no signal in it by construction --
@@ -23,7 +23,7 @@ python run_reality_check.py    # White's Reality Check + Hansen's SPA
 python run_vectorbt_check.py   # cross-check the arithmetic against vectorbt
 python run_risk_execution.py   # limits, neutrality, borrow, multi-day schedule
 python run_tearsheet.py        # docs/TEARSHEET.md + data/blotter.csv
-python -m pytest tests -q      # 56 tests
+python -m pytest tests -q      # 90 tests
 ```
 
 ## What is built
@@ -63,17 +63,57 @@ python -m pytest tests -q      # 56 tests
 1. **Costs were charged to equity but left out of the return series**, so Sharpe
    was identical at 0bps and 20bps while total return fell: every risk-adjusted
    metric was describing a portfolio nobody holds. Fixed; Sharpe now goes
-   0.46 → 0.39 → 0.31 → 0.16 across the cost ladder.
+   0.44 → 0.36 → 0.28 → 0.12 across the cost ladder.
 2. **The significance test used the wrong sample length**: a 100-bar OOS Sharpe
    benchmarked against a 1,500-bar standard error, shrinking the SE ~4× and
    turning search noise into a "significant" result. Fixed; the verdict flipped
    to *indistinguishable from search noise*, which is the correct answer on a
    random walk.
 
+## Bug I found: the out-of-sample window was mostly warm-up
+
+**What it was.** `walk_forward` backtested each 100-bar test window as a
+stand-alone series. The engine's default 60-bar warm-up then left the first 60
+test bars untraded, the last bar could not fill, and the strategy could not read
+the training prices just before the window, even though those prices are in the
+past and legal to use. At most **39 of 100** "out-of-sample" bars were traded. Lookback 90
+was chosen in 3 windows and traded on **0, 0 and 2** of their days, so its
+"OOS Sharpe 0.00" rows were not results. The best OOS Sharpe came from 17 traded
+days, and the deflated Sharpe's excess kurtosis of 8.15 came from the padding
+zeros, not from the returns (−1.09 on the traded days alone).
+
+**How I found it.** Walking through `run_audit.py` line by line:
+`evaluate(te, family(best_p))` passed only the test bars, with the default
+`warmup=60`. Counting the non-zero returns per window confirmed it. It is not a
+look-ahead leak (it used *less* past data, never future data), so the leak
+tests could not see it.
+
+**The fix.** `out_of_sample()` runs the strategy over train + test so it can read
+the training history, scores only the test bars (`Result.window()`), and every
+one of the 100 test bars is now traded. `tests/test_walk_forward.py` pins it: an
+always-long strategy must earn the test window's full price move, and a strategy
+that needs 300 bars of history must trade from the first test bar. Both fail on
+the old code.
+
+| `python run_audit.py` | before | after |
+|---|---|---|
+| momentum mean IS → OOS Sharpe | 1.14 → 0.45 | 1.14 → **0.37** |
+| mean reversion mean IS → OOS Sharpe | 0.18 → −0.07 | 0.18 → **−0.43** |
+| best OOS Sharpe (147 variants) | 2.29 | **3.18** |
+| E[max Sharpe] under the null | 4.23 | 4.23 |
+| deflated Sharpe (excess kurtosis) | 0.089 (8.15) | **0.262 (1.58)** |
+| verdict | noise | **still noise** |
+
+The verdict did not move: the best of 147 tries is still below what the search
+manufactures on a random walk. Individual windows moved a lot (momentum's
+2022-06-14 window went −1.30 → +1.51), which is its own lesson about 100-day
+Sharpes.
+
 ## Survivorship, measured (`python run_survivorship.py`)
 
 The bias row that used to read **NOT DEFENDED** now has a number. A 60-name
-universe where names actually die: 21.7% delisted, booked at their delisting
+universe where names actually die: 17 of 60 (28.3%) delisted, booked at their
+delisting
 return (bankruptcy −100%, compliance −55%, acquisition +18%) rather than dropped,
 because dropping the row converts a total loss into "no position" and *that one
 line is most of survivorship bias*.
@@ -96,7 +136,8 @@ set from.
 ## Capacity
 
 Participation-based impact (`total_bps = 3 + 120·√participation`) replaces the
-fixed-bps model. The edge crosses zero between $1m and $10m of AUM. Past $50m the
+fixed-bps model. Total return turns negative at about $10m (−0.9%) and Sharpe
+crosses zero between $10m (+0.02) and $25m (−0.44) of AUM. Past $50m the
 table prints **impact model SATURATED**: one rebalance leg is the entire day's
 volume, so the model stops growing and every larger AUM reports the same number.
 The honest statement there is not "Sharpe −0.90", it is "this trade cannot be

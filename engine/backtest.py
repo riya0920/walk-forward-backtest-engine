@@ -114,6 +114,24 @@ class Result:
         """
         return float(self.equity.iloc[-1] / self.initial_equity - 1)
 
+    def window(self, first: int, last: int) -> "Result":
+        """The part of this run whose returns sit at positions [first, last),
+        rebased to equity 1.0 at the start of the slice.
+
+        Returns are stored at the DECISION bar: position i holds the P&L of bar
+        i+1 (decided at i, filled at i+1's open). So a slice covers the
+        decisions made at bars first..last-1 and exactly the P&L they earned,
+        with their fills, turnover and costs -- nothing from outside it.
+        """
+        r = self.returns.iloc[first:last]
+        decided = set(r.index)
+        trades = [t for t in self.trades if t["decided_at"] in decided]
+        return Result(equity=(1 + r).cumprod(), returns=r,
+                      positions=self.positions.iloc[first:last],
+                      turnover=float(sum(t["traded"] for t in trades)),
+                      costs_paid=float(sum(t["cost"] for t in trades)),
+                      n_bars=len(r), initial_equity=1.0, trades=trades)
+
     def summary(self) -> dict:
         dd, dur = self.max_drawdown()
         return {"sharpe": self.sharpe(), "sortino": self.sortino(),

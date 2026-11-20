@@ -11,7 +11,7 @@ One row per bias, what defends against it, and, where nothing does, that.
 | Overfitting | Walk-forward: parameters chosen only on the training window, applied untouched to the next. IS and OOS both reported. | **Built** |
 | Multiple testing | Every variant counted (147 in the current run), compared against E[max Sharpe] under the null. | **Built** |
 | Costs | Commission + half-spread + slippage on every fill, **inside the return series**. Sensitivity at 0/5/10/20bps. | **Built** |
-| Capacity | Participation-based square-root impact; edge crosses zero between $1m and $10m AUM. | **Built** |
+| Capacity | Participation-based square-root impact; total return turns negative at about $10m, Sharpe crosses zero between $10m and $25m AUM. | **Built** |
 
 ## The three doors look-ahead comes through
 
@@ -36,20 +36,25 @@ mean-reversion must *not*; a detector that flags everything is useless.
 
 | strategy | mean IS Sharpe | mean OOS Sharpe | decay |
 |---|---|---|---|
-| momentum | 1.17 | 0.24 | 0.93 |
-| mean_reversion | 0.35 | −0.06 | 0.41 |
+| momentum | 1.14 | 0.37 | 0.77 |
+| mean_reversion | 0.18 | −0.43 | 0.61 |
 
 The data is a random walk. Both true Sharpes are zero. The IS column is the
 search finding patterns in noise, and the size of the decay is the point.
+
+Every OOS number is scored on all 100 test bars, with the strategy allowed to
+read the training prices before them (`out_of_sample()` in `run_audit.py`). An
+earlier version backtested the test bars on their own, so the 60-bar warm-up
+left at most 39 of 100 traded; `tests/test_walk_forward.py` pins the fix.
 
 ## Multiple testing (current run)
 
 ```
 variants evaluated (counted, including losers): 147
-best OOS Sharpe observed                      : 2.216
+best OOS Sharpe observed                      : 3.177
 Sharpe standard error at 100-bar OOS window   : 1.587
 E[max Sharpe] under the null, 147 trials      : 4.228
-excess over the null-search benchmark         : -2.012
+excess over the null-search benchmark         : -1.051
 verdict                                       : indistinguishable from search noise
 ```
 

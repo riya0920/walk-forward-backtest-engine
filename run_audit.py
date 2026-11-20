@@ -23,16 +23,41 @@ from engine.strategies import (make_synthetic_prices, mean_reversion, momentum,
 VARIANTS = 0            # every fit, every window, every parameter. Nothing hidden.
 
 
-def evaluate(frame, strat, costs=None):
+def evaluate(frame, strat, costs=None, warmup=60):
     global VARIANTS
     VARIANTS += 1
-    return run(frame, strat, costs)
+    return run(frame, strat, costs, warmup=warmup)
 
 
+TRAIN_BARS = 400
 TEST_BARS = 100
 
 
-def walk_forward(frame, family, name, grid, train_bars=400, test_bars=TEST_BARS):
+def out_of_sample(frame, start, strat, train_bars=TRAIN_BARS, test_bars=TEST_BARS,
+                  costs=None):
+    """Score `strat` on the test window after the training window at `start`,
+    on EVERY one of the test window's bars.
+
+    The strategy runs over train + test, so it can READ the training prices --
+    they are in the past, so this is not look-ahead -- but nothing before the
+    test window is scored. Its first decision is made on the last training bar
+    and fills at the first test bar's open; its last decision is made on the
+    second-to-last test bar and fills at the last one. Returns are stored at the
+    decision bar, so those `test_bars` decisions sit at positions
+    train_bars-1 .. train_bars+test_bars-2.
+
+    The old version backtested the test bars on their own. The default 60-bar
+    warm-up then left only bars 61-99 of 100 traded, a lookback-90 strategy
+    could act on at most 9 of them, and the OOS Sharpe was taken over a series
+    that was mostly padding zeros. tests/test_walk_forward.py pins both.
+    """
+    seg = frame.iloc[start:start + train_bars + test_bars]
+    full = evaluate(seg, strat, costs, warmup=train_bars - 1)
+    return full.window(train_bars - 1, train_bars + test_bars - 1)
+
+
+def walk_forward(frame, family, name, grid, train_bars=TRAIN_BARS,
+                 test_bars=TEST_BARS):
     """Parameters are chosen ONLY on the training window and then applied,
     untouched, to the next window. The in-sample number is kept so the decay is
     reportable rather than quietly discarded."""
@@ -40,11 +65,10 @@ def walk_forward(frame, family, name, grid, train_bars=400, test_bars=TEST_BARS)
     start = 0
     while start + train_bars + test_bars <= len(frame):
         tr = frame.iloc[start:start + train_bars]
-        te = frame.iloc[start + train_bars:start + train_bars + test_bars]
 
         scored = [(evaluate(tr, family(p)).sharpe(), p) for p in grid]
         best_is, best_p = max(scored, key=lambda t: t[0])
-        oos = evaluate(te, family(best_p))
+        oos = out_of_sample(frame, start, family(best_p), train_bars, test_bars)
 
         rows.append({"window_start": frame.index[start].date(),
                      "chosen_param": best_p,
@@ -127,8 +151,9 @@ def main() -> None:
     # ---- 5. multiple testing ----------------------------------------------
     best = float(wf.oos_sharpe.max())
     # n_days must be the length of the window the Sharpe was MEASURED on
-    # (100 bars), not the length of the whole series. Using 1500 here shrinks the
-    # standard error by ~4x and turns search noise into a "significant" result --
+    # (100 bars, every one of them traded since out_of_sample() was fixed --
+    # before that only 39 were), not the length of the whole series. Using
+    # 1500 here shrinks the standard error by ~4x and turns search noise into a "significant" result --
     # the exact inflation this section exists to prevent.
     a = assess(best, VARIANTS, TEST_BARS)
     print("\n" + "=" * 78)
@@ -149,9 +174,10 @@ def main() -> None:
     fam = momentum if best_row.strategy == "momentum" else mean_reversion
     idx = [i for i, d in enumerate(prices.index)
            if d.date() == best_row.window_start][0]
-    te = prices.iloc[idx + 400:idx + 400 + TEST_BARS]
-    best_res = run(te, fam(int(best_row.chosen_param)))
-    d = deflated_sharpe_ratio(best_res.returns.dropna().to_numpy(), VARIANTS)
+    best_res = out_of_sample(prices, idx, fam(int(best_row.chosen_param)))
+    # Re-scoring a variant already counted is not a new trial, so the trial
+    # count is the one assess() used, not VARIANTS (which this call bumped).
+    d = deflated_sharpe_ratio(best_res.returns.dropna().to_numpy(), a["n_trials"])
 
     print("\n" + "-" * 78)
     print("DEFLATED SHARPE (full form: skew and kurtosis included)")
